@@ -112,8 +112,22 @@ void sendToServer ( BIO* bio, unsigned char *message, int* messageLength){
 
 }
 
+RSA * getPrivateKey(){
+	BIO *privFile = BIO_new_file("./privkey.pem","r");
+	RSA *rsaPrivKey = PEM_read_bio_RSAPrivateKey (privFile,NULL,NULL,NULL);
+	BIO_free_all(privFile);
+	return rsaPrivKey;
+}
+
+RSA* getPublicKey(){
+	BIO *pubFile = BIO_new_file("./pubkey.pem","r");
+	RSA *rsaPubKey = PEM_read_bio_RSA_PUBKEY(pubFile,NULL,NULL,NULL);
+	BIO_free_all(pubFile);
+	return rsaPubKey;
+}
 int compareHashFromServer (BIO* bio, unsigned char* challenge){
-	unsigned char recvBuf[20]; //SHA-1 20 bits
+	RSA* pubKey = getPublicKey();	
+	unsigned char recvBuf[RSA_size(pubKey)]; //SHA-1 20 bits
 	unsigned char hashedChallenge[20];
 	
 	printf("Challenge is size: %lu, reading : %s \n",strlen(challenge),challenge);
@@ -121,6 +135,7 @@ int compareHashFromServer (BIO* bio, unsigned char* challenge){
 	SHA1((const unsigned char*)challenge,strlen(challenge),hashedChallenge);
 	int bytesReceived = 0;
 
+	// Read encrypted hash from server
 	bytesReceived = BIO_read(bio,recvBuf,sizeof recvBuf);
 	if (bytesReceived <= 0 ){
 		printf ( "Error reading hashed challenge" );
@@ -128,7 +143,12 @@ int compareHashFromServer (BIO* bio, unsigned char* challenge){
 	}
 	printf ("read from server: %d bytes \n", bytesReceived);
 
-	if (memcmp( hashedChallenge, recvBuf, sizeof recvBuf ) == 0){
+	unsigned char decHash [20];
+	RSA_public_decrypt(bytesReceived,recvBuf,
+				decHash,pubKey,RSA_PKCS1_PADDING);
+
+
+	if (memcmp( hashedChallenge, decHash, sizeof hashedChallenge ) == 0){
 		printf ( "Congrats they match \n ");
 		return 1;
 	}

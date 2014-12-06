@@ -96,8 +96,29 @@ unsigned char* hashChallenge(const unsigned char* challenge ){
 	return shaOutput;	
 }
 
-void sendToClient(BIO* bio, unsigned char* message ){
-	if (BIO_write(bio,message, strlen(message)) <= 0){
+unsigned char* signChar (const unsigned char* challenge, int challengeLength,
+						 int* encryptLength){
+	RSA *privateKey = getPrivateKey();
+	int keySize = RSA_size(privateKey);
+	unsigned char* output = (unsigned char*) malloc (keySize);
+	
+	int sizeEncrypted = RSA_private_encrypt( challengeLength, challenge,
+						output, privateKey,
+						RSA_PKCS1_PADDING);
+	*encryptLength = sizeEncrypted; 
+
+	if (sizeEncrypted <=0){
+		printf ("Error encrypting hashed message");
+		exit(0);
+	}
+
+	return output;
+	
+
+
+}
+void sendToClient(BIO* bio, unsigned char* message, int mLength ){
+	if (BIO_write(bio,message, mLength) <= 0){
 		printf( "Error sending to client \n");
 		exit(1);
 	}
@@ -119,12 +140,19 @@ int main(int count, char *args[]){
 	BIO *connection = waitAndAcceptConnection(portnum);
 	const unsigned char* challenge = getChallengeFromClient(connection);
 	unsigned char* hashedChallenge = hashChallenge(challenge);
-	sendToClient(connection,hashedChallenge);
+	int *signedHashLength = (int*) malloc (sizeof(int));
+	
+	// returns signed hash and assigns length to signedHashLength
+	unsigned char* signedHash = signChar(
+					hashedChallenge,
+					strlen(hashedChallenge),
+					signedHashLength); 
+	sendToClient(connection,signedHash,*signedHashLength);
 	BIO_free_all(connection);
 	free((unsigned char*)challenge);
-	free(hashedChallenge);	
-	
-	cleanupOpenSSL();
+	free(hashedChallenge);
+	free(signedHash);	
+	cleanUpOpenSSL();		
 	return 0;
 }
 

@@ -2,6 +2,9 @@
 #include <openssl/bio.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
+
+#define maxRequestSize 1024
+
 SSL_CTX*  initCTX(){
 	SSL_CTX *ctx;
 	SSL_library_init();
@@ -193,64 +196,35 @@ unsigned char *fileToByteArray(const unsigned char* filename, long *fileLen){
 		fclose(f1);
 		return ret;
 }
-
-/* Handles the request "send or "receive" for @param filename *
- * with the server. 
- * Sends server "filesize file \n" when using @param - request "send" to *
- * establish size of file to be sent                          */
-
-int handleRequestToServer(BIO *bio, unsigned char *request, 
-				  unsigned char *filename){
-	//process request to server
-	if (strcmp(request,"send") == 0){
-		//1 is success
-		long *fileLen = (long*) malloc (sizeof (long));
-		unsigned char *fileInBytes = fileToByteArray(filename, fileLen);
-		unsigned char fileLenArr[sizeof(long)];
-		sprintf (fileLenArr,"%ld",*fileLen);
-		printf ("Filezie of : %s \n", fileLenArr);
-		
-		if (sendProtocolExchangeWithServer(bio, request, filename, fileLenArr ) == 1){
-			
-			printf ("Retrieved file of size: %ld \n",*fileLen);
-			
-			sendFileToServer(bio,fileInBytes, *fileLen);
-			//readProResponseFromServer(bio,"Done",4);
-		
-			
-			
-			
-			
-		}
-			free (fileLen);
-			free (fileInBytes);
-	
+unsigned char* recvRequestFromServ(BIO *bio, const int recvLen){
+	unsigned char *recvBuf = (unsigned char*) malloc(recvLen +1);
+	int bytesRecv = 0;
+	printf ("Awaiting response from server \n");
+	if ((bytesRecv =BIO_read(bio,recvBuf,recvLen)) <= 0 ){
+		printf("Error reading data \n");
 	}
-	return 1;	
-	
+	recvBuf[bytesRecv] = '\0';
+	printf ("read data from server\n");
 
+	return recvBuf;
 }
-/* returns 1 if response is good
- * -1 if server failed to respond with ok */
- 
-int readProResponseFromServer (BIO *bio, unsigned char *expected, int protocolReplyLength){
+int receiveProtocolToServer (BIO *bio, unsigned char *request, 
+										unsigned char *filename){
+	unsigned char * protocol;
+	protocol = (unsigned char*) malloc (strlen(request) + strlen(filename) + 2);
+	memcpy (protocol,request, strlen(request));
+	strcat (protocol, " ");
+	strcat (protocol, filename);
+	
+	sendToServer(bio,protocol,strlen(protocol));
+	
 	int bytesReceived = 0;
-	unsigned char* recvBuf = (unsigned char*) malloc (protocolReplyLength +1);
-	if ((bytesReceived = BIO_read(bio,recvBuf, protocolReplyLength)) <= 0){
-		printf("Error reading protocol response from server\n");
-	}
-	
-	recvBuf[bytesReceived] = '\0';
-	printf ("Received response size: %d :%s \n", bytesReceived, recvBuf);
-	
-	if (strcmp(recvBuf, expected) == 0){
-		printf ("Expected response \n" );
-		free (recvBuf);
-		return 1;
-	}
+	unsigned char *recvBuf = recvRequestFromServ(bio,maxRequestSize);
+	printf ("Recieved %s \n",recvBuf);
+	free (protocol);
 	free (recvBuf);
-	return -1;
-
+	return 1;
+											
 }
 /* ===============PROTOCOL =================
  * First Send  :  "send filesize filename"
@@ -278,6 +252,76 @@ int sendProtocolExchangeWithServer (BIO* bio, const unsigned char *request,
 		return responseFromServer;
 		
 }
+int requestSend(BIO *bio, unsigned char * request, unsigned char *filename){
+	//1 is success
+	long *fileLen = (long*) malloc (sizeof (long));
+	unsigned char *fileInBytes = fileToByteArray(filename, fileLen);
+	unsigned char fileLenArr[sizeof(long)];
+	sprintf (fileLenArr,"%ld",*fileLen);
+	printf ("Filezie of : %s \n", fileLenArr);
+		
+	if (sendProtocolExchangeWithServer(bio, request, filename, fileLenArr ) == 1){		
+		printf ("Retrieved file of size: %ld \n",*fileLen);	
+		sendFileToServer(bio,fileInBytes, *fileLen);
+		//readProResponseFromServer(bio,"Done",4);
+	}
+	free (fileLen);
+	free (fileInBytes);
+	return 1;
+}
+
+int requestReceive(BIO *bio, unsigned char *request, unsigned char *filename){
+	if (receiveProtocolToServer(bio,request,filename))
+		return 1;
+	
+	return -1;
+		
+}
+
+/* Handles the request "send or "receive" for @param filename *
+ * with the server. 
+ * Sends server "filesize file \n" when using @param - request "send" to *
+ * establish size of file to be sent                          */
+
+int handleRequestToServer(BIO *bio, unsigned char *request, 
+				  unsigned char *filename){
+	//process request to server
+	if (strcmp(request,"send") == 0){
+		requestSend(bio,request,filename);
+	}
+	if (strcmp (request, "receive") == 0){
+		printf("Sending receive command \n");
+		requestReceive(bio,request,filename);
+	}
+	return 1;	
+	
+
+}
+
+
+/* returns 1 if response is good
+ * -1 if server failed to respond with ok */
+ 
+int readProResponseFromServer (BIO *bio, unsigned char *expected, int protocolReplyLength){
+	int bytesReceived = 0;
+	unsigned char* recvBuf = (unsigned char*) malloc (protocolReplyLength +1);
+	if ((bytesReceived = BIO_read(bio,recvBuf, protocolReplyLength)) <= 0){
+		printf("Error reading protocol response from server\n");
+	}
+	
+	recvBuf[bytesReceived] = '\0';
+	printf ("Received response size: %d :%s \n", bytesReceived, recvBuf);
+	
+	if (strcmp(recvBuf, expected) == 0){
+		printf ("Expected response \n" );
+		free (recvBuf);
+		return 1;
+	}
+	free (recvBuf);
+	return -1;
+
+}
+
 
 
 int sendFileToServer (BIO* bio, unsigned char *request , int len){

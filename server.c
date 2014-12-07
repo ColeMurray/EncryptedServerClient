@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <openssl/ssl.h>
 #include <openssl/bio.h>
-
+#define maxRequestSize 1024
 void cleanUpOpenSSL(){
 	ENGINE_cleanup();
 	CONF_modules_unload(1);
@@ -118,6 +118,28 @@ unsigned char* signChar (const unsigned char* challenge, int challengeLength,
 
 
 }
+
+unsigned char *fileToByteArray(const unsigned char* filename, long *fileLen){
+		FILE *f1 = fopen (filename, "r");
+		fseek(f1,0,SEEK_END);
+		long len = ftell(f1);
+		rewind(f1);
+		
+		//allocate mem for whole file
+		unsigned char *ret = (unsigned char*) malloc (sizeof(char) * len);
+		
+		size_t result = fread(ret,1,len,f1);
+		printf ("Filelength:%lu \n",len);
+		*fileLen = len;
+		printf ("FileLength Addr: %ld \n", *fileLen);
+		if (result != len){
+			printf ("Error reading from file\n");
+		}
+		
+		
+		fclose(f1);
+		return ret;
+}
 void sendToClient(BIO* bio, unsigned char* message, int mLength ){
 	if (BIO_write(bio,message, mLength) <= 0){
 		printf( "Error sending to client \n");
@@ -137,6 +159,23 @@ unsigned char* recvRequestFromClient(BIO *bio, const int recvLen){
 
 	return recvBuf;
 }
+unsigned char *getRequestFileandSize(const unsigned char * filename, long *filesize){
+	
+	unsigned char *fileInBytes = fileToByteArray(filename,filesize);
+	printf ("File size of %ld \n", *filesize);
+	return fileInBytes;
+}
+unsigned char *buildProtocolToClient (const unsigned char *filename, unsigned char *filesize){
+	// place long into array to be cat into response
+	
+	unsigned char *protoResponse = (unsigned char *)
+										malloc ( strlen(filename) + strlen(filesize) + 2 );
+	memcpy(protoResponse,filesize, strlen(filesize));
+	strcat(protoResponse, " " );
+	strcat (protoResponse, filename);
+	printf ("ProtoResponse: %s \n", protoResponse);
+	return protoResponse;
+}
 
 int handleRequestFromClient (BIO *bio){
 	/* ========Read protocol================
@@ -147,7 +186,7 @@ int handleRequestFromClient (BIO *bio){
 	* 	First Recv: "Ok"
 	* 	Second Second : "byte arrayOfFile"
 	* ==================================== */
-	int maxRequestSize = 1024;
+	
 	unsigned char *recvBuf = recvRequestFromClient(bio, maxRequestSize);
 	unsigned char* request = strtok(recvBuf," ");
 	printf("Request: %s \n", request);
@@ -167,6 +206,25 @@ int handleRequestFromClient (BIO *bio){
 		
 		
 	}
+	
+	if (strcmp (request, "receive") == 0){
+		unsigned char * filename = strtok (NULL, "");
+		long * filesize = (long*) malloc (sizeof(long));
+		unsigned char *fileInBytes = getRequestFileandSize(filename,filesize);
+		unsigned char fileSizeArr[sizeof(long)];
+		sprintf(fileSizeArr,"%ld",*filesize);
+		unsigned char *protoRecv = buildProtocolToClient(filename,fileSizeArr);
+		sendToClient (bio,protoRecv,strlen(protoRecv));
+		
+		
+		//sendToClient(bio,protoResponse,*filesize);
+		
+		free(filesize);
+		free (fileInBytes);
+		free (protoRecv);
+		
+	
+	} 
 	
 	free(recvBuf);
 	return 0;

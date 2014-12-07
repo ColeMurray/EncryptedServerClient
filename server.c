@@ -126,7 +126,7 @@ void sendToClient(BIO* bio, unsigned char* message, int mLength ){
 }
 
 unsigned char* recvRequestFromClient(BIO *bio, const int recvLen){
-	unsigned char *recvBuf = (unsigned char*) malloc(recvLen);
+	unsigned char *recvBuf = (unsigned char*) malloc(recvLen +1);
 	int bytesRecv = 0;
 	printf ("Awaiting response from server \n");
 	if ((bytesRecv =BIO_read(bio,recvBuf,recvLen)) <= 0 ){
@@ -163,9 +163,14 @@ int handleRequestFromClient (BIO *bio){
 		printf ("Received file from client...\n");
 		printf ("Filesize: %d \n",fileSize);
 		createByteFile(filename,fileInBytes,fileSize);
+		free(fileInBytes);
 		
 		
 	}
+	
+	free(recvBuf);
+	return 0;
+	
 	
 }
 

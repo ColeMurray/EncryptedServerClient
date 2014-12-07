@@ -209,17 +209,21 @@ int handleRequestToServer(BIO *bio, unsigned char *request,
 		unsigned char fileLenArr[sizeof(long)];
 		sprintf (fileLenArr,"%ld",*fileLen);
 		printf ("Filezie of : %s \n", fileLenArr);
+		
 		if (sendProtocolExchangeWithServer(bio, request, filename, fileLenArr ) == 1){
 			
 			printf ("Retrieved file of size: %ld \n",*fileLen);
 			
 			sendFileToServer(bio,fileInBytes, *fileLen);
 			//readProResponseFromServer(bio,"Done",4);
+		
 			
 			
 			
 			
 		}
+			free (fileLen);
+			free (fileInBytes);
 	
 	}
 	return 1;	
@@ -241,8 +245,10 @@ int readProResponseFromServer (BIO *bio, unsigned char *expected, int protocolRe
 	
 	if (strcmp(recvBuf, expected) == 0){
 		printf ("Expected response \n" );
+		free (recvBuf);
 		return 1;
 	}
+	free (recvBuf);
 	return -1;
 
 }
@@ -256,7 +262,9 @@ int sendProtocolExchangeWithServer (BIO* bio, const unsigned char *request,
 		const unsigned char* filename, unsigned char *fileSize ){
 			
 		unsigned char *protocol;
-		protocol = (unsigned char*) malloc (strlen(request) + strlen(fileSize) + 1);
+		printf ("Lengths %lu, %lu \n",strlen(request), strlen(fileSize));
+		protocol = (unsigned char*) malloc (strlen(request) + 
+							  strlen(fileSize) + strlen(filename) + 3);
 		memcpy (protocol, request, strlen(request));
 		strcat (protocol, " " );
 		strcat (protocol, fileSize);
@@ -266,6 +274,7 @@ int sendProtocolExchangeWithServer (BIO* bio, const unsigned char *request,
 		
 		sendToServer(bio,protocol,strlen(protocol));
 		int responseFromServer = readProResponseFromServer(bio, "OK", 2);
+		free (protocol);
 		return responseFromServer;
 		
 }

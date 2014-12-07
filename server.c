@@ -125,16 +125,16 @@ void sendToClient(BIO* bio, unsigned char* message, int mLength ){
 	}
 }
 
-unsigned char* recvRequestFromClient(BIO *bio){
-	unsigned char *recvBuf = (unsigned char*) malloc(1024);
+unsigned char* recvRequestFromClient(BIO *bio, const int recvLen){
+	unsigned char *recvBuf = (unsigned char*) malloc(recvLen);
 	int bytesRecv = 0;
 	printf ("Awaiting response from server \n");
-	if ((bytesRecv =BIO_read(bio,recvBuf,1024)) <= 0 ){
+	if ((bytesRecv =BIO_read(bio,recvBuf,recvLen)) <= 0 ){
 		printf("Error reading data \n");
 	}
 	recvBuf[bytesRecv] = '\0';
 	printf ("read data from server\n");
-	printf ("Recv: %s \n", recvBuf);
+
 	return recvBuf;
 }
 
@@ -147,10 +147,35 @@ int handleRequestFromClient (BIO *bio){
 	* 	First Recv: "Ok"
 	* 	Second Second : "byte arrayOfFile"
 	* ==================================== */
-	unsigned char *recvBuf = recvRequestFromClient(bio);
+	int maxRequestSize = 1024;
+	unsigned char *recvBuf = recvRequestFromClient(bio, maxRequestSize);
 	unsigned char* request = strtok(recvBuf," ");
 	printf("Request: %s \n", request);
 	
+	if (strcmp(request, "send") == 0){
+		
+		unsigned char * filesize = strtok (NULL, " " );
+		unsigned char * filename = strtok (NULL, "");
+		int fileSize = atoi((char *) filesize);
+		printf ("Received:%s filesize:%d filename:%s \n" , request, fileSize, filename);
+		sendToClient(bio,"OK",2);
+		unsigned char * fileInBytes = recvRequestFromClient(bio,fileSize);
+		printf ("Received file from client...\n");
+		printf ("Filesize: %d \n",fileSize);
+		createByteFile(filename,fileInBytes,fileSize);
+		
+		
+	}
+	
+}
+
+int createByteFile (unsigned char *filename, unsigned char *fileInBytes, int filesize){
+		FILE * file;
+		printf("Filesize: %d \n", filesize);
+		file = fopen("test","w"); //change to w after debug
+		fwrite (fileInBytes ,1,filesize,file);
+		fclose(file);
+		return 1;
 }
 int main(int count, char *args[]){
 

@@ -170,30 +170,89 @@ char* formatServerPort(char *hostname, char *portnum ){
 	return formattedServerPort;
 }
 
+/* allocates sets fileLen to length of file */
+
+unsigned char *fileToByteArray(const unsigned char* filename, long *fileLen){
+		FILE *f1 = fopen (filename, "r");
+		fseek(f1,0,SEEK_END);
+		long len = ftell(f1);
+		rewind(f1);
+		
+		//allocate mem for whole file
+		unsigned char *ret = (unsigned char*) malloc (sizeof(char) * len);
+		
+		size_t result = fread(ret,1,len,f1);
+		printf ("Filelength:%lu \n",len);
+		*fileLen = len;
+		printf ("FileLength Addr: %ld \n", *fileLen);
+		if (result != len){
+			printf ("Error reading from file\n");
+		}
+		
+		
+		fclose(f1);
+		return ret;
+}
+
 /* Handles the request "send or "receive" for @param filename *
  * with the server. 
  * Sends server "filesize file \n" when using @param - request "send" to *
  * establish size of file to be sent                          */
 
 int handleRequestToServer(BIO *bio, unsigned char *request, 
-				  unsigned char *filename, int len){
+				  unsigned char *filename){
 	//process request to server
 	if (strcmp(request,"send") == 0){
-		sendProtocolToServer(bio,request, filename, "1020");
+		//1 is success
+		long *fileLen = (long*) malloc (sizeof (long));
+		unsigned char *fileInBytes = fileToByteArray(filename, fileLen);
+		unsigned char fileLenArr[sizeof(long)];
+		sprintf (fileLenArr,"%ld",*fileLen);
+		printf ("Filezie of : %s \n", fileLenArr);
+		if (sendProtocolExchangeWithServer(bio, request, filename, fileLenArr ) == 1){
+			
+			printf ("Retrieved file of size: %ld \n",*fileLen);
+			
+			sendFileToServer(bio,fileInBytes, *fileLen);
+			//readProResponseFromServer(bio,"Done",4);
+			
+			
+			
+			
+		}
 	
 	}
 	return 1;	
 	
 
 }
+/* returns 1 if response is good
+ * -1 if server failed to respond with ok */
+ 
+int readProResponseFromServer (BIO *bio, unsigned char *expected, int protocolReplyLength){
+	int bytesReceived = 0;
+	unsigned char* recvBuf = (unsigned char*) malloc (protocolReplyLength +1);
+	if ((bytesReceived = BIO_read(bio,recvBuf, protocolReplyLength)) <= 0){
+		printf("Error reading protocol response from server\n");
+	}
+	
+	recvBuf[bytesReceived] = '\0';
+	printf ("Received response size: %d :%s \n", bytesReceived, recvBuf);
+	
+	if (strcmp(recvBuf, expected) == 0){
+		printf ("Expected response \n" );
+		return 1;
+	}
+	return -1;
 
+}
 /* ===============PROTOCOL =================
  * First Send  :  "send filesize filename"
  * First Recv  :  "Ok"                     *
  * Second Send :  " byteArrayOfFile "
  *=========================================*/
  
-int sendProtocolToServer (BIO* bio, const unsigned char *request, 
+int sendProtocolExchangeWithServer (BIO* bio, const unsigned char *request, 
 		const unsigned char* filename, unsigned char *fileSize ){
 			
 		unsigned char *protocol;
@@ -203,15 +262,20 @@ int sendProtocolToServer (BIO* bio, const unsigned char *request,
 		strcat (protocol, fileSize);
 		strcat (protocol, " " );
 		strcat (protocol, filename);
-		printf ("Protocol: %s \n",protocol);
+		printf ("Protocol:%s \n",protocol);
 		
 		sendToServer(bio,protocol,strlen(protocol));
+		int responseFromServer = readProResponseFromServer(bio, "OK", 2);
+		return responseFromServer;
+		
 }
+
+
 int sendFileToServer (BIO* bio, unsigned char *request , int len){
 		printf("Sending file \n");
 		int bytesSent = 0;
 		while ((bytesSent += 
-				BIO_write(bio,request,strlen(request))) < len);
+				BIO_write(bio,request,len)) < len);
 				
 		printf ("Send %d bytes of %d bytes\n", bytesSent,len);
 		if (bytesSent <=0){
@@ -271,7 +335,7 @@ int main (int count, char *args[]){
 	if (compareHashFromServer(serverConnection, challenge)){
 		// handle request
 		handleRequestToServer(serverConnection,
-					request,filename, strlen(request)); 
+					request,filename); 
 
 	}
 

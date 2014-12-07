@@ -104,9 +104,9 @@ unsigned char* encryptChallenge (unsigned char *challenge, int* messageLength){
 }
 
 
-void sendToServer ( BIO* bio, unsigned char *message, int* messageLength){
-	printf("Writing message:size: %d \n",*messageLength);
-	if(BIO_write ( bio, message, *messageLength) <= 0 ){
+void sendToServer ( BIO* bio, unsigned char *message, int messageLength){
+	printf("Writing message:size: %d \n",messageLength);
+	if(BIO_write ( bio, message, messageLength) <= 0 ){
 		printf ("Error writing to server");
 	}
 
@@ -147,13 +147,17 @@ int compareHashFromServer (BIO* bio, unsigned char* challenge){
 	RSA_public_decrypt(bytesReceived,recvBuf,
 				decHash,pubKey,RSA_PKCS1_PADDING);
 
+	RSA_free(pubKey);
 
-	if (memcmp( hashedChallenge, decHash, sizeof hashedChallenge ) == 0){
-		printf ( "Congrats they match \n ");
-		return 1;
+	if (memcmp( hashedChallenge, decHash, sizeof hashedChallenge ) != 0){
+		printf ( "Servers hash did not match, exiting \n");
+		BIO_free_all(bio);
+		free(challenge);
+		exit(1);
+		
 	}
-	
-
+	printf ("Hashes match! \n");
+	return 1;	
 
 }	
 char* formatServerPort(char *hostname, char *portnum ){
@@ -165,14 +169,83 @@ char* formatServerPort(char *hostname, char *portnum ){
 
 	return formattedServerPort;
 }
+
+/* Handles the request "send or "receive" for @param filename *
+ * with the server. 
+ * Sends server "filesize file \n" when using @param - request "send" to *
+ * establish size of file to be sent                          */
+
+int handleRequestToServer(BIO *bio, unsigned char *request, 
+				  unsigned char *filename, int len){
+	//process request to server
+	if (strcmp(request,"send") == 0){
+		sendProtocolToServer(bio,request, filename, "1020");
+	
+	}
+	return 1;	
+	
+
+}
+
+/* ===============PROTOCOL =================
+ * First Send  :  "send filesize filename"
+ * First Recv  :  "Ok"                     *
+ * Second Send :  " byteArrayOfFile "
+ *=========================================*/
+ 
+int sendProtocolToServer (BIO* bio, const unsigned char *request, 
+		const unsigned char* filename, unsigned char *fileSize ){
+			
+		unsigned char *protocol;
+		protocol = (unsigned char*) malloc (strlen(request) + strlen(fileSize) + 1);
+		memcpy (protocol, request, strlen(request));
+		strcat (protocol, " " );
+		strcat (protocol, fileSize);
+		strcat (protocol, " " );
+		strcat (protocol, filename);
+		printf ("Protocol: %s \n",protocol);
+		
+		sendToServer(bio,protocol,strlen(protocol));
+}
+int sendFileToServer (BIO* bio, unsigned char *request , int len){
+		printf("Sending file \n");
+		int bytesSent = 0;
+		while ((bytesSent += 
+				BIO_write(bio,request,strlen(request))) < len);
+				
+		printf ("Send %d bytes of %d bytes\n", bytesSent,len);
+		if (bytesSent <=0){
+			printf ("Error sending \n");
+		}
+		return 1;
+
+
+}
+/*
+int receiveFileFromServer (BIO* bio){
+	unsigned char protocolBuf[1024]; // this could cause an overflow
+	int bytesReceived = 0;
+	if ((bytesReceived = BIO_read(bio,protocolBuf,sizeof protocolBuf)) < 0){ 
+			printf ("Error reading protocol from server \n" );
+		}
+	// protocol buf now holds 
+	// = "filesize \n"
+	unsigned char filesize = strtok(protocolBuf," ");
+	printf ("File size is %s \n", filesize);
+	int numberOfBytesInFile = atoi(filesize);
+	// make another call to read from server
+		
+	
+} */
 		
 int main (int count, char *args[]){
 	SSL_CTX *ctx;
-	char *hostname, *portnum, *filename, *keyfilename;
+	char *hostname, *portnum;
+	unsigned char *request, *filename;
 	SSL_library_init();
 	ctx = initCTX();
-	if ( count != 4 ){
-		printf("usage: %s <hostname> <portname> filename\n ", args[0]);
+	if ( count != 5 ){
+		printf("usage: %s --serverAddress=0.0.0 --port=1234  --send/receive ./file \n ", args[0]);
 		exit(0);
 	}
 	
@@ -180,7 +253,8 @@ int main (int count, char *args[]){
 //	OpenSSL_add_all_algorithms();
 	hostname = args[1];
 	portnum = args[2];
-	filename = args[3];
+	request = args[3];
+	filename = args[4];	
 
 
 	char *formattedServerPort = formatServerPort(hostname,portnum);
@@ -192,9 +266,14 @@ int main (int count, char *args[]){
 	unsigned char* encryptedChallenge = encryptChallenge(challenge, messageLength);
 	printf("Message Length: %d \n",*messageLength);	
 	// Send Challenge to server
-	sendToServer (serverConnection,encryptedChallenge, messageLength );
+	sendToServer (serverConnection,encryptedChallenge, *messageLength );
 	// Receive hash from server
-	compareHashFromServer(serverConnection, challenge);
+	if (compareHashFromServer(serverConnection, challenge)){
+		// handle request
+		handleRequestToServer(serverConnection,
+					request,filename, strlen(request)); 
+
+	}
 
 	
 	free(encryptedChallenge);

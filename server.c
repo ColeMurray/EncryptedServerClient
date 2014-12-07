@@ -112,6 +112,7 @@ unsigned char* signChar (const unsigned char* challenge, int challengeLength,
 		exit(0);
 	}
 
+	RSA_free(privateKey);
 	return output;
 	
 
@@ -122,6 +123,34 @@ void sendToClient(BIO* bio, unsigned char* message, int mLength ){
 		printf( "Error sending to client \n");
 		exit(1);
 	}
+}
+
+unsigned char* recvRequestFromClient(BIO *bio){
+	unsigned char *recvBuf = (unsigned char*) malloc(1024);
+	int bytesRecv = 0;
+	printf ("Awaiting response from server \n");
+	if ((bytesRecv =BIO_read(bio,recvBuf,1024)) <= 0 ){
+		printf("Error reading data \n");
+	}
+	recvBuf[bytesRecv] = '\0';
+	printf ("read data from server\n");
+	printf ("Recv: %s \n", recvBuf);
+	return recvBuf;
+}
+
+int handleRequestFromClient (BIO *bio){
+	/* ========Read protocol================
+	* if first word == send
+	* 	recvSendFromClient)()
+	* else
+	* 	send filesize filename 
+	* 	First Recv: "Ok"
+	* 	Second Second : "byte arrayOfFile"
+	* ==================================== */
+	unsigned char *recvBuf = recvRequestFromClient(bio);
+	unsigned char* request = strtok(recvBuf," ");
+	printf("Request: %s \n", request);
+	
 }
 int main(int count, char *args[]){
 
@@ -148,10 +177,14 @@ int main(int count, char *args[]){
 					strlen(hashedChallenge),
 					signedHashLength); 
 	sendToClient(connection,signedHash,*signedHashLength);
+
+
+	handleRequestFromClient(connection);
 	BIO_free_all(connection);
 	free((unsigned char*)challenge);
 	free(hashedChallenge);
-	free(signedHash);	
+	free(signedHash);
+	free (signedHashLength);	
 	cleanUpOpenSSL();		
 	return 0;
 }

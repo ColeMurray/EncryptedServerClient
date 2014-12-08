@@ -176,6 +176,68 @@ unsigned char *buildProtocolToClient (const unsigned char *filename, unsigned ch
 	printf ("ProtoResponse: %s \n", protoResponse);
 	return protoResponse;
 }
+int recvOKFromClient (BIO *bio){
+	unsigned char *response  = recvRequestFromClient(bio,2);
+	if ( strcmp ( response , "OK" ) == 0){
+		free(response);
+		return 1;
+	}
+	free(response);
+	return -1;
+
+	
+}
+
+
+int sendFileToClient (BIO* bio, unsigned char *request , int len){
+		printf("Sending file \n");
+		int bytesSent = 0;
+		while ((bytesSent += 
+				BIO_write(bio,request,len)) < len);
+				
+		printf ("Send %d bytes of %d bytes\n", bytesSent,len);
+		if (bytesSent <=0){
+			printf ("Error sending \n");
+		}
+		return 1;
+
+
+}
+
+int requestSend(BIO* bio, unsigned char * request, unsigned char* recvBuf){
+		unsigned char * filesize = strtok (NULL, " " );
+		unsigned char * filename = strtok (NULL, "");
+		int fileSize = atoi((char *) filesize);
+		printf ("Received:%s filesize:%d filename:%s \n" , request, fileSize, filename);
+		sendToClient(bio,"OK",2);
+		unsigned char * fileInBytes = recvRequestFromClient(bio,fileSize);
+		printf ("Received file from client...\n");
+		printf ("Filesize: %d \n",fileSize);
+		createByteFile(filename,fileInBytes,fileSize);
+		free(fileInBytes);
+
+}
+
+int requestRecv (BIO *bio, unsigned char *recvBuf){
+	unsigned char * filename = strtok (NULL, "");
+	long * filesize = (long*) malloc (sizeof(long));
+	unsigned char *fileInBytes = getRequestFileandSize(filename,filesize);
+	unsigned char fileSizeArr[sizeof(long)];
+	sprintf(fileSizeArr,"%ld",*filesize);
+	unsigned char *protoRecv = buildProtocolToClient(filename,fileSizeArr);
+	sendToClient (bio,protoRecv,strlen(protoRecv));
+		
+	if (recvOKFromClient(bio) != 1 ){
+		printf ("error receiving ok from client \n");
+	}
+		
+	sendFileToClient(bio,fileInBytes,*filesize);
+					
+	free(filesize);
+	free (fileInBytes);
+	free (protoRecv);
+		
+}
 
 int handleRequestFromClient (BIO *bio){
 	/* ========Read protocol================
@@ -192,37 +254,14 @@ int handleRequestFromClient (BIO *bio){
 	printf("Request: %s \n", request);
 	
 	if (strcmp(request, "send") == 0){
-		
-		unsigned char * filesize = strtok (NULL, " " );
-		unsigned char * filename = strtok (NULL, "");
-		int fileSize = atoi((char *) filesize);
-		printf ("Received:%s filesize:%d filename:%s \n" , request, fileSize, filename);
-		sendToClient(bio,"OK",2);
-		unsigned char * fileInBytes = recvRequestFromClient(bio,fileSize);
-		printf ("Received file from client...\n");
-		printf ("Filesize: %d \n",fileSize);
-		createByteFile(filename,fileInBytes,fileSize);
-		free(fileInBytes);
+		requestSend(bio,request,recvBuf);
+
 		
 		
 	}
 	
 	if (strcmp (request, "receive") == 0){
-		unsigned char * filename = strtok (NULL, "");
-		long * filesize = (long*) malloc (sizeof(long));
-		unsigned char *fileInBytes = getRequestFileandSize(filename,filesize);
-		unsigned char fileSizeArr[sizeof(long)];
-		sprintf(fileSizeArr,"%ld",*filesize);
-		unsigned char *protoRecv = buildProtocolToClient(filename,fileSizeArr);
-		sendToClient (bio,protoRecv,strlen(protoRecv));
-		
-		
-		//sendToClient(bio,protoResponse,*filesize);
-		
-		free(filesize);
-		free (fileInBytes);
-		free (protoRecv);
-		
+		requestRecv(bio,recvBuf);
 	
 	} 
 	

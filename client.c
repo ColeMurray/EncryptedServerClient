@@ -57,20 +57,19 @@ BIO* connectSSL(SSL_CTX *ctx, char *formattedServPort){
 		SSL_CTX_free(ctx);
 		exit(1);
 	}
-	printf( "Connected to client \n" );
+	printf( "==========Connected to client============= \n" );
 	
 	if (BIO_do_handshake(bio) <= 0 ){
 		fprintf (stderr, "Error in handshake \n ");
 		exit(1);
 	}
 
-	printf ( "Completed handshake! \n" );
+	printf ( "==========Completed handshake!=============== \n" );
 	return bio;
 }
 
 unsigned char * allocateOutputBuf (RSA *rsa_public_key){
 	int maxSize = RSA_size(rsa_public_key);
-	printf ("Max size is : %d \n" ,maxSize);
 	unsigned char *rsaSizeBuf = (unsigned char * ) malloc (maxSize+1);
 	return rsaSizeBuf;
 }
@@ -173,6 +172,15 @@ char* formatServerPort(char *hostname, char *portnum ){
 	return formattedServerPort;
 }
 
+int createByteFile (unsigned char *filename, unsigned char *fileInBytes, int filesize){
+		FILE * file;
+		printf("Filesize: %d \n", filesize);
+		file = fopen("test","w"); //change to w after debug
+		fwrite (fileInBytes ,1,filesize,file);
+		fclose(file);
+		return 1;
+}
+
 /* allocates sets fileLen to length of file */
 
 unsigned char *fileToByteArray(const unsigned char* filename, long *fileLen){
@@ -208,23 +216,43 @@ unsigned char* recvRequestFromServ(BIO *bio, const int recvLen){
 
 	return recvBuf;
 }
-int receiveProtocolToServer (BIO *bio, unsigned char *request, 
-										unsigned char *filename){
+
+unsigned char *buildRecvProtocol (unsigned char* request, unsigned char *filename){
 	unsigned char * protocol;
 	protocol = (unsigned char*) malloc (strlen(request) + strlen(filename) + 2);
 	memcpy (protocol,request, strlen(request));
 	strcat (protocol, " ");
 	strcat (protocol, filename);
-	
+	return protocol;
+}
+/* Send : receive filename
+ * Serv Reply : filesize filename
+ * Send : OK
+ * Serv reply : [bytes of file]
+ * Send : Done
+ */
+unsigned char * receiveProtocolFromServer (BIO *bio, unsigned char *request, 
+										unsigned char *filename){
+											
+	unsigned char *protocol = buildRecvProtocol(request,filename);
+	// :"receive filename"
 	sendToServer(bio,protocol,strlen(protocol));
-	
-	int bytesReceived = 0;
+	// receive : "filesize, filename
 	unsigned char *recvBuf = recvRequestFromServ(bio,maxRequestSize);
 	printf ("Recieved %s \n",recvBuf);
+	
+	sendToServer(bio,"OK",2);
 	free (protocol);
-	free (recvBuf);
-	return 1;
+	
+	return recvBuf;
 											
+}
+
+int parseFilesize(unsigned char * protoResponse){
+	unsigned char *filesizeArr = strtok (protoResponse, " ");
+	int filesize = atoi ((char *) filesizeArr);
+	return filesize;
+	
 }
 /* ===============PROTOCOL =================
  * First Send  :  "send filesize filename"
@@ -271,8 +299,19 @@ int requestSend(BIO *bio, unsigned char * request, unsigned char *filename){
 }
 
 int requestReceive(BIO *bio, unsigned char *request, unsigned char *filename){
-	if (receiveProtocolToServer(bio,request,filename))
-		return 1;
+	unsigned char * protoResponse = 
+						 receiveProtocolFromServer(bio,request,filename);
+	int filesize = parseFilesize(protoResponse);
+	printf ("Parsed filesize: %d \n", filesize);
+	unsigned char * fileInBytes = recvRequestFromServ(bio, filesize);
+	
+	
+	
+	createByteFile(filename,fileInBytes,filesize);
+				
+	free (protoResponse);
+	free(fileInBytes)
+	
 	
 	return -1;
 		

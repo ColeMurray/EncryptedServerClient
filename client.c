@@ -93,8 +93,7 @@ unsigned char* encryptChallenge (unsigned char *challenge, int* messageLength){
 
 	// encrypt challenge with public key, loads into outputBuffer
 	// challengeLen must be < RSA_size(rsa_ -11 for RSA_PKCS1_Padding
-	int sizeEncrypted = RSA_public_encrypt(strlen(challenge)+1,
-			      (unsigned char*) challenge,
+	int sizeEncrypted = RSA_public_encrypt(strlen(challenge)+1,challenge,
 			      output, rsa_public_key,
 			      RSA_PKCS1_PADDING);
 	if (sizeEncrypted <= 0 ) {
@@ -125,7 +124,7 @@ int compareHashFromServer (BIO* bio, unsigned char* challenge){
 	int bytesReceived = 0;
 
 	// Read encrypted hash from server
-	bytesReceived = BIO_read(bio,recvBuf,sizeof recvBuf);
+	bytesReceived = BIO_read(bio,recvBuf,sizeof recvBuf +1);
 	if (bytesReceived <= 0 ){
 		printf ( "Error reading hashed challenge" );
 		exit(0);
@@ -177,9 +176,7 @@ unsigned char *fileToByteArray(const unsigned char* filename, long *fileLen){
 		unsigned char *ret = (unsigned char*) malloc (sizeof(char) * len);
 		
 		size_t result = fread(ret,1,len,f1);
-		printf ("Filelength:%lu \n",len);
 		*fileLen = len;
-		printf ("FileLength Addr: %ld \n", *fileLen);
 		if (result != len){
 			printf ("Error reading from file\n");
 		}
@@ -191,12 +188,10 @@ unsigned char *fileToByteArray(const unsigned char* filename, long *fileLen){
 unsigned char* recvRequestFromServ(BIO *bio, const int recvLen){
 	unsigned char *recvBuf = (unsigned char*) malloc(recvLen +1);
 	int bytesRecv = 0;
-	printf ("Awaiting response from server \n");
 	if ((bytesRecv =BIO_read(bio,recvBuf,recvLen)) <= 0 ){
 		printf("Error reading data \n");
 	}
 	recvBuf[bytesRecv] = '\0';
-	printf ("read data from server\n");
 
 	return recvBuf;
 }
@@ -244,11 +239,11 @@ int parseFilesize(unsigned char * protoResponse){
  * Second Send :  " byteArrayOfFile "
  *=========================================*/
  
+ /* This function sends corrupted memory for the send command */
 int sendProtocolExchangeWithServer (BIO* bio, const unsigned char *request, 
 		const unsigned char* filename, unsigned char *fileSize ){
 			
 		unsigned char *protocol;
-		printf ("Lengths %lu, %lu \n",strlen(request), strlen(fileSize));
 		protocol = (unsigned char*) malloc (strlen(request) + 
 							  strlen(fileSize) + strlen(filename) + 3);
 		memcpy (protocol, request, strlen(request));
@@ -256,8 +251,6 @@ int sendProtocolExchangeWithServer (BIO* bio, const unsigned char *request,
 		strcat (protocol, fileSize);
 		strcat (protocol, " " );
 		strcat (protocol, filename);
-		printf ("Protocol:%s \n",protocol);
-		
 		sendToServer(bio,protocol,strlen(protocol));
 		int responseFromServer = readProResponseFromServer(bio, "OK", 2);
 		free (protocol);
@@ -270,10 +263,9 @@ int requestSend(BIO *bio, unsigned char * request, unsigned char *filename){
 	unsigned char *fileInBytes = fileToByteArray(filename, fileLen);
 	unsigned char fileLenArr[sizeof(long)];
 	sprintf (fileLenArr,"%ld",*fileLen);
-	printf ("Filezie of : %s \n", fileLenArr);
 		
-	if (sendProtocolExchangeWithServer(bio, request, filename, fileLenArr ) == 1){		
-		printf ("Retrieved file of size: %ld \n",*fileLen);	
+	if (sendProtocolExchangeWithServer(bio, request, filename, fileLenArr ) == 1){
+		printf ("===========Sending file of size: %ld ================ \n", *fileLen)	;	
 		sendFileToServer(bio,fileInBytes, *fileLen);
 		//readProResponseFromServer(bio,"Done",4);
 	}
@@ -287,7 +279,7 @@ int requestReceive(BIO *bio, unsigned char *request, unsigned char *filename){
 	unsigned char * protoResponse = 
 						 receiveProtocolFromServer(bio,request,filename);
 	int filesize = parseFilesize(protoResponse);
-	printf ("Parsed filesize: %d \n", filesize);
+
 	unsigned char * fileInBytes = recvRequestFromServ(bio, filesize);
 	
 	
@@ -328,16 +320,15 @@ int handleRequestToServer(BIO *bio, unsigned char *request,
  
 int readProResponseFromServer (BIO *bio, unsigned char *expected, int protocolReplyLength){
 	int bytesReceived = 0;
-	unsigned char* recvBuf = (unsigned char*) malloc (protocolReplyLength +1);
+	unsigned char* recvBuf = (unsigned char*) malloc (protocolReplyLength+1);
 	if ((bytesReceived = BIO_read(bio,recvBuf, protocolReplyLength)) <= 0){
 		printf("Error reading protocol response from server\n");
 	}
 	
 	recvBuf[bytesReceived] = '\0';
-	printf ("Received response size: %d :%s \n", bytesReceived, recvBuf);
+	
 	
 	if (strcmp(recvBuf, expected) == 0){
-		printf ("Expected response \n" );
 		free (recvBuf);
 		return 1;
 	}
@@ -353,7 +344,7 @@ int sendFileToServer (BIO* bio, unsigned char *request , int len){
 		while ((bytesSent += 
 				BIO_write(bio,request,len)) < len);
 				
-		printf ("Send %d bytes of %d bytes\n", bytesSent,len);
+		printf ("Sent %d bytes of %d bytes\n", bytesSent,len);
 		if (bytesSent <=0){
 			printf ("Error sending \n");
 		}
@@ -362,7 +353,7 @@ int sendFileToServer (BIO* bio, unsigned char *request , int len){
 
 }
 
-char *parseInputParam (char *param){
+unsigned char *parseInputParam (char *param){
 	if ((strcmp((const char*)param, "--send") == 0) || (strcmp((const char*)param,"--receive") == 0)){
 		
 		char *parsed = param;
@@ -402,10 +393,12 @@ int main (int count, char *args[]){
 	BIO * serverConnection = connectSSL(ctx,formattedServerPort);
 	
 	int* messageLength = (int*) malloc (sizeof (int));
+	srand(time(NULL));
+	int number = rand() % 1000;
 	
-	unsigned char *challenge = "1";
+	unsigned char *challenge = (unsigned char*) malloc (4);
+	sprintf(challenge,"%d",number);
 	unsigned char* encryptedChallenge = encryptChallenge(challenge, messageLength);
-	printf("Message Length: %d \n",*messageLength);	
 	// Send Challenge to server
 	sendToServer (serverConnection,encryptedChallenge, *messageLength );
 	// Receive hash from server
@@ -418,7 +411,8 @@ int main (int count, char *args[]){
 
 	
 	free(encryptedChallenge);
-	free (messageLength);		
+	free (messageLength);	
+	free (challenge);	
 	BIO_free_all(serverConnection);		
 	free(formattedServerPort);
 	SSL_CTX_free(ctx);

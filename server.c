@@ -33,7 +33,7 @@ BIO * waitAndAcceptConnection(char* portnum){
 		BIO_free_all(connection);
 		exit(0);
 	}
-	printf( "Connection Established on port: %s \n", portnum );
+	printf( "==============Connection Established on port: %s============== \n", portnum );
 	return connection;
 }
 
@@ -41,7 +41,6 @@ RSA* getPublicKey (){
 	BIO *pubFile = BIO_new_file("./pubkey.pem","r");
 	RSA *rsaPublicKey = PEM_read_bio_RSA_PUBKEY(pubFile,NULL,NULL,NULL);
 	int rsaSize = RSA_size(rsaPublicKey);
-	printf ("Read keysize of : %d \n", rsaSize);
 	BIO_free_all(pubFile);
 	return rsaPublicKey;
 }
@@ -58,7 +57,6 @@ RSA* getPrivateKey(){
 unsigned char* getChallengeFromClient(BIO* connection){
 	RSA *rsaPublicKey = getPublicKey();
 	int rsaSize = RSA_size(rsaPublicKey);
-	printf ("Read keysize of : %d \n", rsaSize);
 	int bytesReceived;
 	unsigned char recvBuf[rsaSize];
 
@@ -68,7 +66,6 @@ unsigned char* getChallengeFromClient(BIO* connection){
 		exit(0);
 	}
 	printf ("Recieved encrypted challenge of size: %d \n", bytesReceived);
-	printf ("Preparing to decrypt \n");
 	RSA* rsaPrivKey = getPrivateKey();
 	int rsaPrivSize = RSA_size(rsaPrivKey);
 	
@@ -89,7 +86,6 @@ unsigned char* hashChallenge(const unsigned char* challenge ){
 	// sign with private key
 	// send to client
 //	unsigned char*  shaOutput = (unsigned char*) malloc(20+1); // SHA hashes to 20 bits
-	printf ("STRLEN: %lu, SizeOf: %lu \n ", strlen(challenge), sizeof challenge);
 	
 	unsigned char* shaOutput = (unsigned char*) malloc (20);
 	SHA1(challenge,strlen(challenge),shaOutput);
@@ -102,7 +98,7 @@ unsigned char* signChar (const unsigned char* challenge, int challengeLength,
 	int keySize = RSA_size(privateKey);
 	unsigned char* output = (unsigned char*) malloc (keySize);
 	
-	int sizeEncrypted = RSA_private_encrypt( challengeLength, challenge,
+	int sizeEncrypted = RSA_private_encrypt( challengeLength +1, challenge,
 						output, privateKey,
 						RSA_PKCS1_PADDING);
 	*encryptLength = sizeEncrypted; 
@@ -129,9 +125,8 @@ unsigned char *fileToByteArray(const unsigned char* filename, long *fileLen){
 		unsigned char *ret = (unsigned char*) malloc (sizeof(char) * len);
 		
 		size_t result = fread(ret,1,len,f1);
-		printf ("Filelength:%lu \n",len);
+		
 		*fileLen = len;
-		printf ("FileLength Addr: %ld \n", *fileLen);
 		if (result != len){
 			printf ("Error reading from file\n");
 		}
@@ -150,19 +145,17 @@ void sendToClient(BIO* bio, unsigned char* message, int mLength ){
 unsigned char* recvRequestFromClient(BIO *bio, const int recvLen){
 	unsigned char *recvBuf = (unsigned char*) malloc(recvLen +1);
 	int bytesRecv = 0;
-	printf ("Awaiting response from server \n");
+	printf ("Awaiting response from client \n");
 	if ((bytesRecv =BIO_read(bio,recvBuf,recvLen)) <= 0 ){
 		printf("Error reading data \n");
 	}
 	recvBuf[bytesRecv] = '\0';
-	printf ("read data from server\n");
 
 	return recvBuf;
 }
 unsigned char *getRequestFileandSize(const unsigned char * filename, long *filesize){
 	
 	unsigned char *fileInBytes = fileToByteArray(filename,filesize);
-	printf ("File size of %ld \n", *filesize);
 	return fileInBytes;
 }
 unsigned char *buildProtocolToClient (const unsigned char *filename, unsigned char *filesize){
@@ -173,7 +166,6 @@ unsigned char *buildProtocolToClient (const unsigned char *filename, unsigned ch
 	memcpy(protoResponse,filesize, strlen(filesize));
 	strcat(protoResponse, " " );
 	strcat (protoResponse, filename);
-	printf ("ProtoResponse: %s \n", protoResponse);
 	return protoResponse;
 }
 int recvOKFromClient (BIO *bio){
@@ -190,12 +182,12 @@ int recvOKFromClient (BIO *bio){
 
 
 int sendFileToClient (BIO* bio, unsigned char *request , int len){
-		printf("Sending file \n");
+		printf("==============Sending file============= \n");
 		int bytesSent = 0;
 		while ((bytesSent += 
 				BIO_write(bio,request,len)) < len);
 				
-		printf ("Send %d bytes of %d bytes\n", bytesSent,len);
+		printf ("Sent %d bytes of %d bytes\n", bytesSent,len);
 		if (bytesSent <=0){
 			printf ("Error sending \n");
 		}
@@ -208,8 +200,9 @@ int requestSend(BIO* bio, unsigned char * request, unsigned char* recvBuf){
 		unsigned char * filesize = strtok (NULL, " " );
 		unsigned char * filename = strtok (NULL, "");
 		int fileSize = atoi((char *) filesize);
-		printf ("Received:%s filesize:%d filename:%s \n" , request, fileSize, filename);
+		//printf ("Received:%s filesize:%d filename:%s \n" , request, fileSize, filename);
 		sendToClient(bio,"OK",2);
+		printf("Sent OK to Client \n");
 		unsigned char * fileInBytes = recvRequestFromClient(bio,fileSize);
 		printf ("Received file from client...\n");
 		printf ("Filesize: %d \n",fileSize);
@@ -251,19 +244,21 @@ int handleRequestFromClient (BIO *bio){
 	
 	unsigned char *recvBuf = recvRequestFromClient(bio, maxRequestSize);
 	unsigned char* request = strtok(recvBuf," ");
-	printf("Request: %s \n", request);
 	
-	if (strcmp(request, "send") == 0){
+	
+	
+	
+	if (strcmp (request, "receive") == 0){
+		requestRecv(bio,recvBuf);
+	
+	} // There is an error with parsing send from client
+	//if (strcmp(request, "send") == 0){
+	else{
 		requestSend(bio,request,recvBuf);
 
 		
 		
 	}
-	
-	if (strcmp (request, "receive") == 0){
-		requestRecv(bio,recvBuf);
-	
-	} 
 	
 	free(recvBuf);
 	return 0;
@@ -273,7 +268,6 @@ int handleRequestFromClient (BIO *bio){
 
 int createByteFile (unsigned char *filename, unsigned char *fileInBytes, int filesize){
 		FILE * file;
-		printf("Filesize: %d \n", filesize);
 		file = fopen("test","w"); //change to w after debug
 		fwrite (fileInBytes ,1,filesize,file);
 		fclose(file);

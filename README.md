@@ -1,42 +1,43 @@
-EncryptedServerClient
+#EncryptedServerClient
 =====================
 
-OpenSSL Encrypted File Server Client
+###OpenSSL Encrypted File Server Client
 
-*Still in progress*
+Usage: <br>./client --serveraddress=00.11.22.33.44 --portnum=1234 --send ./file    (send file to server) <br>
+       ./client --serveraddress=00.11.22.33.44 --portnum=1234 --receive ./file    (receive file from server)
 
-*Milestone 1*:
-
-_Server_
-
-  -hash challenge using sha-1
-
-  -sign hash with private key
-
-  -send encrypted hash
-
-_*Client*_
-
-  -decrypt hash with public key of server
-
-  -confirm match with sent challenge
-    -terminate if no match
-
-  -proceed to send request
+       ./server --portnum=1234
+       
 
 
-*Milestone 2*
--Server
-    -process & handle request
+#####*Milestone 1*: **COMPLETE**
+
+######**Server**
+
+ ```~~hash challenge using sha-1~~```
+
+  ```~~sign hash with private key~~```
+
+  ```~~send encrypted hash~~```
+
+######_*Client*_
+
+  ```-decrypt hash with public key of server```
+
+  ```-confirm match with sent challenge```
   
-    -Client
-        -if receive, prepare buffer
+  ```-terminate if no match```
+
+  ```-proceed to send request```
+
+
+#####*Milestone 2*: **COMPLETE**
+######-Server
+    ~~process & handle request~~
+  
+######-Client
+       ~~if receive, prepare buffer~~
     
 
-
-
-Usage: ./client host port filename
-
-       ./server port
        
 

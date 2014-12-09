@@ -22,6 +22,20 @@ SSL_CTX*  initCTX(){
 
 }
 
+RSA * getPrivateKey(){
+	BIO *privFile = BIO_new_file("./privkey.pem","r");
+	RSA *rsaPrivKey = PEM_read_bio_RSAPrivateKey (privFile,NULL,NULL,NULL);
+	BIO_free_all(privFile);
+	return rsaPrivKey;
+}
+
+RSA* getPublicKey(){
+	BIO *pubFile = BIO_new_file("./pubkey.pem","r");
+	RSA *rsaPubKey = PEM_read_bio_RSA_PUBKEY(pubFile,NULL,NULL,NULL);
+	BIO_free_all(pubFile);
+	return rsaPubKey;
+}
+
 BIO* connectSSL(SSL_CTX *ctx, char *formattedServPort){
 	BIO *bio;
 	SSL *ssl;
@@ -57,7 +71,7 @@ BIO* connectSSL(SSL_CTX *ctx, char *formattedServPort){
 		SSL_CTX_free(ctx);
 		exit(1);
 	}
-	printf( "==========Connected to client============= \n" );
+	printf( "==========Connected to client=============== \n" );
 	
 	if (BIO_do_handshake(bio) <= 0 ){
 		fprintf (stderr, "Error in handshake \n ");
@@ -74,24 +88,12 @@ unsigned char * allocateOutputBuf (RSA *rsa_public_key){
 	return rsaSizeBuf;
 }
 unsigned char* encryptChallenge (unsigned char *challenge, int* messageLength){
-	BIO *keyFile = BIO_new_file("./pubkey.pem", "r" );
-	if (keyFile == NULL){
-		printf ( "Error with bio object in encrypt");
-	}
-	RSA *rsa_public_key = PEM_read_bio_RSA_PUBKEY(keyFile, NULL,NULL,NULL);
-	if (rsa_public_key == NULL)
-	{
-		printf( "Error wit public key" );
-		exit(0);
-	}
-
-
+	RSA *rsa_public_key = getPublicKey();
 	unsigned char * output = allocateOutputBuf( rsa_public_key );
 
 	// encrypt challenge with public key, loads into outputBuffer
 	// challengeLen must be < RSA_size(rsa_ -11 for RSA_PKCS1_Padding
-	printf ("Challenge is size of: %lu \n", strlen(challenge));
-	int sizeEncrypted = RSA_public_encrypt(strlen(challenge),
+	int sizeEncrypted = RSA_public_encrypt(strlen(challenge)+1,
 			      (unsigned char*) challenge,
 			      output, rsa_public_key,
 			      RSA_PKCS1_PADDING);
@@ -101,38 +103,23 @@ unsigned char* encryptChallenge (unsigned char *challenge, int* messageLength){
 	}
 	*messageLength = sizeEncrypted;
 	RSA_free(rsa_public_key);
-	BIO_free_all(keyFile);
 	return output;
 }
 
 
 void sendToServer ( BIO* bio, unsigned char *message, int messageLength){
-	printf("Writing message:size: %d \n",messageLength);
 	if(BIO_write ( bio, message, messageLength) <= 0 ){
 		printf ("Error writing to server");
 	}
 
 }
 
-RSA * getPrivateKey(){
-	BIO *privFile = BIO_new_file("./privkey.pem","r");
-	RSA *rsaPrivKey = PEM_read_bio_RSAPrivateKey (privFile,NULL,NULL,NULL);
-	BIO_free_all(privFile);
-	return rsaPrivKey;
-}
 
-RSA* getPublicKey(){
-	BIO *pubFile = BIO_new_file("./pubkey.pem","r");
-	RSA *rsaPubKey = PEM_read_bio_RSA_PUBKEY(pubFile,NULL,NULL,NULL);
-	BIO_free_all(pubFile);
-	return rsaPubKey;
-}
 int compareHashFromServer (BIO* bio, unsigned char* challenge){
 	RSA* pubKey = getPublicKey();	
 	unsigned char recvBuf[RSA_size(pubKey)]; //SHA-1 20 bits
 	unsigned char hashedChallenge[20];
 	
-	printf("Challenge is size: %lu, reading : %s \n",strlen(challenge),challenge);
 	//Hash the challenge
 	SHA1((const unsigned char*)challenge,strlen(challenge),hashedChallenge);
 	int bytesReceived = 0;
@@ -143,7 +130,6 @@ int compareHashFromServer (BIO* bio, unsigned char* challenge){
 		printf ( "Error reading hashed challenge" );
 		exit(0);
 	}
-	printf ("read from server: %d bytes \n", bytesReceived);
 
 	unsigned char decHash [20];
 	RSA_public_decrypt(bytesReceived,recvBuf,
@@ -154,11 +140,10 @@ int compareHashFromServer (BIO* bio, unsigned char* challenge){
 	if (memcmp( hashedChallenge, decHash, sizeof hashedChallenge ) != 0){
 		printf ( "Servers hash did not match, exiting \n");
 		BIO_free_all(bio);
-		free(challenge);
 		exit(1);
 		
 	}
-	printf ("Hashes match! \n");
+	printf ("============Hashes match!=============== \n");
 	return 1;	
 
 }	
@@ -174,8 +159,7 @@ char* formatServerPort(char *hostname, char *portnum ){
 
 int createByteFile (unsigned char *filename, unsigned char *fileInBytes, int filesize){
 		FILE * file;
-		printf("Filesize: %d \n", filesize);
-		file = fopen("test","w"); //change to w after debug
+		file = fopen(filename,"w"); //change to w after debug
 		fwrite (fileInBytes ,1,filesize,file);
 		fclose(file);
 		return 1;
@@ -216,6 +200,7 @@ unsigned char* recvRequestFromServ(BIO *bio, const int recvLen){
 
 	return recvBuf;
 }
+/* receive filename */
 
 unsigned char *buildRecvProtocol (unsigned char* request, unsigned char *filename){
 	unsigned char * protocol;
@@ -239,7 +224,6 @@ unsigned char * receiveProtocolFromServer (BIO *bio, unsigned char *request,
 	sendToServer(bio,protocol,strlen(protocol));
 	// receive : "filesize, filename
 	unsigned char *recvBuf = recvRequestFromServ(bio,maxRequestSize);
-	printf ("Recieved %s \n",recvBuf);
 	
 	sendToServer(bio,"OK",2);
 	free (protocol);
@@ -297,6 +281,7 @@ int requestSend(BIO *bio, unsigned char * request, unsigned char *filename){
 	free (fileInBytes);
 	return 1;
 }
+/* Receives byte array from server and creates a file locally */
 
 int requestReceive(BIO *bio, unsigned char *request, unsigned char *filename){
 	unsigned char * protoResponse = 
@@ -310,7 +295,7 @@ int requestReceive(BIO *bio, unsigned char *request, unsigned char *filename){
 	createByteFile(filename,fileInBytes,filesize);
 				
 	free (protoResponse);
-	free(fileInBytes)
+	free(fileInBytes);
 	
 	
 	return -1;
@@ -364,7 +349,6 @@ int readProResponseFromServer (BIO *bio, unsigned char *expected, int protocolRe
 
 
 int sendFileToServer (BIO* bio, unsigned char *request , int len){
-		printf("Sending file \n");
 		int bytesSent = 0;
 		while ((bytesSent += 
 				BIO_write(bio,request,len)) < len);
@@ -377,22 +361,22 @@ int sendFileToServer (BIO* bio, unsigned char *request , int len){
 
 
 }
-/*
-int receiveFileFromServer (BIO* bio){
-	unsigned char protocolBuf[1024]; // this could cause an overflow
-	int bytesReceived = 0;
-	if ((bytesReceived = BIO_read(bio,protocolBuf,sizeof protocolBuf)) < 0){ 
-			printf ("Error reading protocol from server \n" );
-		}
-	// protocol buf now holds 
-	// = "filesize \n"
-	unsigned char filesize = strtok(protocolBuf," ");
-	printf ("File size is %s \n", filesize);
-	int numberOfBytesInFile = atoi(filesize);
-	// make another call to read from server
+
+char *parseInputParam (char *param){
+	if ((strcmp((const char*)param, "--send") == 0) || (strcmp((const char*)param,"--receive") == 0)){
 		
+		char *parsed = param;
+		parsed +=2;
+		
+		return parsed;
+	}
+	else{
+		char *garbage = strtok(param, "=");
+		char *parsed = strtok(NULL," ");
+		return parsed;
+	}
 	
-} */
+}
 		
 int main (int count, char *args[]){
 	SSL_CTX *ctx;
@@ -407,9 +391,9 @@ int main (int count, char *args[]){
 	
 	//initialize SSL library
 //	OpenSSL_add_all_algorithms();
-	hostname = args[1];
-	portnum = args[2];
-	request = args[3];
+	hostname = parseInputParam(args[1]);
+	portnum = parseInputParam(args[2]);
+	request = parseInputParam(args[3]);
 	filename = args[4];	
 
 
@@ -418,7 +402,8 @@ int main (int count, char *args[]){
 	BIO * serverConnection = connectSSL(ctx,formattedServerPort);
 	
 	int* messageLength = (int*) malloc (sizeof (int));
-	unsigned char *challenge = "Random Challenge";
+	
+	unsigned char *challenge = "1";
 	unsigned char* encryptedChallenge = encryptChallenge(challenge, messageLength);
 	printf("Message Length: %d \n",*messageLength);	
 	// Send Challenge to server

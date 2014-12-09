@@ -91,7 +91,7 @@ unsigned char* hashChallenge(const unsigned char* challenge ){
 //	unsigned char*  shaOutput = (unsigned char*) malloc(20+1); // SHA hashes to 20 bits
 	printf ("STRLEN: %lu, SizeOf: %lu \n ", strlen(challenge), sizeof challenge);
 	
-	unsigned char* shaOutput = (unsigned char*) malloc (20 +1);
+	unsigned char* shaOutput = (unsigned char*) malloc (20);
 	SHA1(challenge,strlen(challenge),shaOutput);
 	return shaOutput;	
 }
@@ -279,13 +279,21 @@ int createByteFile (unsigned char *filename, unsigned char *fileInBytes, int fil
 		fclose(file);
 		return 1;
 }
+
+char *parseInputParam(char* param){
+		char* garbage = strtok(param,"=");
+		char *portNum = strtok(NULL, " ");
+	    printf ("PortNum: %s \n",portNum);
+		return portNum;
+}
+
 int main(int count, char *args[]){
 
-	char* portnum;
+	char* servAddr, *portnum;
 	if (count != 2){
 		printf("Usage:%s portnum\n",args[0]);
 	}
-	portnum = args[1];
+	portnum = parseInputParam(args[1]);
 	
 	SSL_library_init();
 	
